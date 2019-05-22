@@ -1,0 +1,242 @@
+---
+title: "320final"
+output: html_document
+author: "Achyut Reddy, Samuel Hui, Josh Nial"
+---
+
+```{r pipeline}
+suppressMessages(library(tidyverse))
+suppressMessages(library(dplyr))
+suppressMessages(library(lubridate))
+suppressMessages(library(plotly))
+suppressMessages(library(janitor))
+suppressMessages(library(leaflet))
+suppressMessages(library(colorRamps))
+suppressMessages(library(proj4))
+suppressMessages(library(validate))
+suppressMessages(library(ggthemes))
+suppressMessages(library(scales))
+suppressMessages(library(broom))
+```
+
+## Intro
+In this project, we will be walking through the entire data science pipeline.  
+
+Many of the steps we will explain will be quite confusing without including some sort of file to follow along with. Therefore, this project will use a data set titled "Los Angeles Parking Tickets" to give examples of the concepts described, which will help the user better understand how to implement the steps of the pipeline we will discuss. Following these steps of the pipeline will help show the process someone takes to creating the point they are trying to make.
+
+## Data Curation
+
+The first step in the pipeline is data curation, which is the organization and integration of data collected from a source.
+The data we will be using is taken from this website: https://www.kaggle.com/cityofLA/los-angeles-parking-citations
+
+This file is a .csv file, which is a very common format used to store large amounts of data. It is called parking-citations.csv.  Once this file is stored in the same folder of your computer as the document you are creating, it can be accessed.
+We will use a variable called parking_citations to access the data in this file. After importing the csv, we will call parking_citations to display what is actually stored in the file.
+
+
+```{r pipeline1}
+parking_citations<- read_csv("parking-citations.csv")
+parking_citations
+```
+
+
+## Parsing
+
+Parsing is the process of choosing which pieces of information you need to do your analysis. Many csv files are very detailed and not every piece of information is needed. For our example, there is information about the car type and color that received the ticket. However, if we were just writing an article about the average pricing of a parking ticket, then this information is not necessary.
+
+
+As you can see, this file is very large and we are unable to see every piece of information it holds at once. 
+We can use a function called select to view specific parts of the file. Below, we will take a look at just the "Fine amount" column of the file.
+We can also look at multiple columns at once with this function. 
+
+
+```{r pipeline2}
+select(parking_citations,("Fine amount"))
+select(parking_citations,("Fine amount"),("Latitude"))
+```
+
+
+## Management
+
+Managing the data we are looking at is also an important step in the data science pipeline. This can include aspects such as creating new data variables, deleting data, and handling missing data. Oftentimes, there is missing data in the file. We cannot expect everything to be recorded and we have to find ways to deal with this missing data. There are mainly two methods we will use to work with the data that is missing. In our example, we will be using the latitude and longitude columns for our report. However, if you take a look at the latitude and logitude columns, you will see that missing data is inputted just a 99999. 
+
+
+```{r pipeline3}
+select(parking_citations,("Longitude"))
+```
+
+
+The first method of handling data is known as imputation.With imputation, we can fill in the missing values with just the average of the values we are given. This is a very simple approach and can lead to your data being less accurate. If there are a lot of missing values, then the data will just begin to approach the average when this may not always be the case. 
+ 
+Since we are given such a large data set, we can afford to not use imputation and just skip over the missing values. This will keep our data as accurate as possible. For our example, we can do this by simply adding the line "filter(latitude!=99999)" into whichever pipeline we need to and it will take out all the information where the latitude is not given. You will see this line being used below when we make the interactive maps for the project. 
+
+Below, you can see the Total number of tickets that were issued during the previous week
+
+```{r, echo=FALSE}
+#parking_citations %>% filter(Issue Date >= floor_date(today()-7, unit = 'weeks')) %>% nrow()
+parking_citations %>% filter(`Issue Date` >= today()-10) %>% nrow()
+
+```
+
+## Exploratory data analysis
+After loading the data, we want to now put it into a form where we can see it better and it is more friendly than scrolling through the dataset. First we are going to make a graph of the tickets for the last week and how they are spread out throughout the different days in the week. One thing we can see from this graph is that on the weekends, the number of tickets drop drastically, I assume due to the fact that most people don't work on those days and don't need to drive anywhere.
+
+The following graph shows the total number of tickets that where issued during the previous week, by date. It is made by first filtering the data so that only the last week is included, then just plotting the data and grouping it by date. Finally attaching labels to everything is the last step.
+
+```{r, echo=FALSE}
+
+#Select data for last week
+last_week <- parking_citations %>% 
+                filter(`Issue Date` >= today()-10)
+
+#Plot Data
+plot_ly(last_week %>% group_by(`Issue Date`) %>% tally(), x = ~`Issue Date`, y = ~n, type = 'scatter', mode = 'line') %>%
+  layout(title='Previous weeks issued tickets per day')
+
+```
+
+The next graph that we will show is showing the number of each type of violation on each different day in the last week. We use the color code for each different violation type to show the different violations in each day. As you can see, there are quite a lot of different violations so there are many colors in each day that's why I added the ability to hover over each part of the bar graph and a tooltip will show allowing you to see which violation it is.
+
+This is accomplished by first grouping by the violations again for the last week then arranging it by decreasing number of tickets in an attempt to make the graph look better, then finally the actual plotting is done using ggplot.
+
+```{r, echo=FALSE}
+
+##Filter top 5 Violations
+top_violations <- last_week %>% 
+                group_by(`Violation Description`) %>% 
+                tally() %>% 
+                arrange(-n) %>% 
+                head(5)
+#Plot the data
+p <- ggplot(last_week, aes(`Issue Date`)) + geom_bar(aes(fill= `Violation Description`), stat='count')
+ggplotly(p)
+```
+
+## Ticket Counts by Month
+
+This graph shows the count of tickets per month across 5 years. It will show if any year or month is drastically different or if there is a clear trend in the tickets per month of per year. The reason tickets for 2019 in month 5 is so low is because we are only halfway through the month so it will be drastically lower than every other month. 
+
+This is done by creating a new year and month column in the parking_citation database then filtering the year to be past 2015 to decrease the number of lines on the graph to make it more readable. Next we group by year and month then summarise so that we only get one point per month and one line per year. Finally we plot the data and add special touches such as a theme, and labels for the x and y axis along with changing the color for each year line. 
+
+```{r message=FALSE, warnings = FALSE}
+parking_citations %>%
+    mutate(Yr = year(`Issue Date`), 
+           Mth = month(`Issue Date`)) %>%
+    filter(Yr >=2015) %>%
+    group_by(Yr, Mth) %>%
+    summarise(ct = n()) %>%
+    ggplot(aes(Mth, ct, color = factor(Yr))) +
+    geom_line() + 
+    geom_point(size = 1) + 
+    theme_hc() + 
+    scale_fill_pander() + 
+    labs(x = "Month", y = "Count", color = "Year") + 
+    scale_y_continuous(limits = c(0,225000)) + 
+    scale_x_continuous(breaks = seq(1,12,1))
+
+```
+
+
+
+## Creating a map of the data 
+
+Now we will look at the locations of the top 200 fines on tickets issued last week. We will be looking at these locations by creating an interactive map. This map will group datapoints together to make the map less cluttered then as you zoom in, the large bubbles will subdivide and break into smaller and smaller groups until you reach individual tickets when you can hover over the dot and see the location, date, time, fine amount, make, color, and the violation it was assigned for split by a bar for convenience.
+
+To make this map, we start by filtering the last week tickets to only keep the top 200 fines. Next we convert latitude and longitude from feet coordinates given in the dataset to normal lat and long that we will use. We put these in a new column in the database. Finally we plot the data on the map by adding tiles and circle markers then just putting a label on each data point with location, date, time, fine amount, make, color, and the violation it was assigned for. Adding a key at the bottom right is the very last step just for added convenience when looking over the map.
+
+```{r, echo=FALSE}
+##Filter data to keep only 100 most expensive issued tickets and filter out the ones without coordinates
+
+top_200_fines <- last_week %>%
+    filter(Latitude != 99999) %>%
+    arrange(-`Fine amount`) %>%
+    head(200)
+
+##Convert latitude longitude from US Feet coordinates to normal lat lon
+
+#Create projection element to convert from US Feet coordinates to normal lat lon
+pj <- "+proj=lcc +lat_1=34.03333333333333 +lat_2=35.46666666666667 +lat_0=33.5 +lon_0=-118 +x_0=2000000 +y_0=500000.0000000002 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 no_defs"
+
+#Add converted latitude longitude to top_200_fines dataframe
+top_200_fines_conv <- cbind(top_200_fines,
+                            data.frame(project(data.frame(top_200_fines$Latitude, top_200_fines$Longitude), proj = pj, inverse = TRUE)))
+names(top_200_fines_conv)[c(20, 21)] <- c('lon', 'lat') #Rename column names of converted longitude latitude
+
+#Plot the data
+
+pal <- colorNumeric(palette = 'RdYlBu', domain = NULL, reverse = TRUE) #Create color palette
+
+leaflet(data = top_200_fines_conv) %>%  
+    addProviderTiles("CartoDB.Positron") %>%  
+    addCircleMarkers(~lon, ~lat, clusterOptions = markerClusterOptions(), color = ~pal(`Fine amount`), radius = 3, 
+    label = paste0(top_200_fines_conv$Location,' | ', top_200_fines_conv$`Issue Date`,' | ', top_200_fines_conv$`Issue time`, ' | ',' $', top_200_fines_conv$`Fine amount`, ' ', ' | ', top_200_fines_conv$Make, '  | ', top_200_fines_conv$Color, '  | ', top_200_fines_conv$`Violation Description`)) %>%
+    addLegend('bottomright', pal = pal, values = ~`Fine amount`, title = 'Fine amounts')
+
+```
+
+
+## Hypothesis Testing
+From this map we can clearly see some sort of clustering of tickets prices, but can we actually determine if certain factors influence ticket price to some degree of statistical significance? This is where we will use hypothesis testing. We will use a linear regression model as we want to predict ticket prices based off of certain factors such as location.
+
+Our final linear regression model will look something like this
+
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_{12}x_1 x_2$$
+
+Our null hypothesis is
+$H_0: \beta_1 = \beta_2 = \beta_{12} = 0$ 
+and our alternative is that not all of these values are 0. This means that some linear relationship exists.
+
+## Machine Learning
+Now we have to construct our model before analyzing it to see if we can reject our null hypothesis and to find out if we have a good model. We are also including an interaction between latitude and longitude because these are two related variables.
+
+```{r lmfit}
+lmfit <- lm(`Fine amount`~Latitude*Longitude, parking_citations)
+tidy(lmfit)
+```
+
+Note the p-value produced by lmfit in the last column extremely close to 0. This means that there is almost a 0 percent chance that the relationship between latitude and fine amount happened by random chance assuming the null is true. Therefore we can reject the null hypothesis that there is no relationship between these variables.
+
+We can further test the hypothesis by computing an F statistic to describe how close each of the $\beta$s are to 0. If the statistic is significantly greater than 1, we can reject our null hypothesis.
+```{r statistic}
+lmfit %>% 
+  glance() %>%
+  select(r.squared, sigma, statistic, df, p.value)
+```
+
+Although we have rejected our null hypothesis, according to our r squared term, it seems that our model does not accurately capture the relationship. 
+
+This is most likely because a linear model was not the best model if we are trying to use latitude and longitude to predict fine amount and we would have to find a better model in order to accurately make predictions. We can instead try to find something else that we can explain with a linear relationship such as make of the car. You might be confused as to how a qualitative variable can be used, but what r does in the backend is make dummy variables for each make which can take on values of 0 or 1 corresponding to false or true if the car is actually of that make. In our data, there are 55 different makes so we have 59 variables in our regression.
+
+In addition, because the dataset is so big, it's helpful to reduce the size while we are still figuring out our model so that we can run it on any computer. Here we use a random selection of 1000 data points as a sample.
+
+
+```{r lmfit2}
+
+sample_df <- parking_citations %>%
+  sample_n(1000)
+
+lmfit2 <- lm(`Fine amount`~Make, sample_df)
+tidy(lmfit2)
+```
+
+We make the same observations as before that our p values are small meaning some sort of relationship exists.
+
+Now if we look at are r squared value, we see that is much better than our model before even though it's not perfect. This means we explained more about the ticket price by using the make, but that there is a lot more in our data that we haven't explained yet. 
+```{r statistic2}
+lmfit2 %>% 
+  glance() %>%
+  select(r.squared, sigma, statistic, df, p.value)
+```
+
+
+We can also take a look at the plot of fitted values vs residuals to see that there is not too much of an apparent pattern despite a couple outliers.
+```{r residuals}
+augment(lmfit2) %>%
+  ggplot(aes(x=.fitted,y=.resid)) +
+    geom_point() + 
+    geom_smooth() +
+    labs(x="fitted", y="residual")
+```
+
+
+## Conclusion
+In the end, we learned how to import and view data in r, tried to find some interesting details about the data, and then tried to fit a model to those observations to see if we could accurately predict prices of tickets. Altough we did not end up finding a perfect linear model, often times we will never end up finding a perfect model. What we have done however, is establish how to determine what makes a model good and we tried both location and make to try and predict ticket prices. We established that altough some sort of relationship exists, it cannot be entirely explained with just a linear model. In the future, we can try other types of regression and machine learning models to try and find one with the best fit.
