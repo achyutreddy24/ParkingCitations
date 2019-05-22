@@ -1,7 +1,7 @@
 ---
 title: "320final"
 output: html_document
-author: "Achyut Reddy, Samuel Hui, Josh Nial"
+author: "Achyut Reddy, Samuel Hui, Josh Nail"
 ---
 
 ```{r pipeline}
